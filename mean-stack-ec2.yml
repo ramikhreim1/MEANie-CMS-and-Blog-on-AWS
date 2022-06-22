@@ -1,0 +1,100 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Metadata:
+    Generator: "Rami Khreim"
+Description: "AWS CloudFormation Template for Setup Node.js + MongoDB Production Server on Ubuntu 18.04 Ubuntu 19.04 on EC2 Instance - ,This can be used to setup and configure a production Node.js + MongoDB Web Server from scratch with an Amazon EC2 instance.
+ (Optional) Have Installed MEANie CMS and Blog behined NGNIX will be installed.
+ Only Once EC2 instance and its security group resources are used if you create a stack from this template."
+Parameters:
+
+  ImageId:
+    Type: String
+    Description: 'latest AMI for Ubuntu 18.04 picked from Stockholm eu-north-1b Region'
+    Default: 'ami-0bf2ce41790745811'
+  InstanceType:
+    Type: String
+    Description: 'Choose another instance type to resize the instance, over provisioned instance'
+    Default: 't3.micro'
+    AllowedValues: [t2.nano, t2.micro, t2.small, t2.medium, t2.large, t2.xlarge, t2.2xlarge,
+      t3.nano, t3.micro, t3.small, t3.medium, t3.large, t3.xlarge, t3.2xlarge,
+      m4.large, m4.xlarge, m4.2x  large, m4.4xlarge, m4.10xlarge,
+      m5.large, m5.xlarge, m5.2xlarge, m5.4xlarge,
+      c5.large, c5.xlarge, c5.2xlarge, c5.4xlarge, c5.9xlarge,
+      g3.8xlarge,
+      r5.large, r5.xlarge, r5.2xlarge, r5.4xlarge, r3.12xlarge,
+      i3.xlarge, i3.2xlarge, i3.4xlarge, i3.8xlarge,
+      d2.xlarge, d2.2xlarge, d2.4xlarge, d2.8xlarge]
+    ConstraintDescription: must be a valid EC2 instance type.
+  KeyName:
+    Description: Keypair to login to the instance
+    Type: AWS::EC2::KeyPair::KeyName
+
+Resources:
+    EC2Instance:
+        Type: "AWS::EC2::Instance"
+        Properties:
+            ImageId: "ami-0bf2ce41790745811"
+            InstanceType: !Ref InstanceType
+            KeyName: !Ref KeyName
+            SecurityGroupIds:
+              - !Ref MEANInstanceSecurityGroup
+
+            UserData:
+              Fn::Base64:
+                !Sub |
+                  #!/bin/bash
+                  apt update && apt install --assume-yes curl
+                  curl --silent --location https://deb.nodesource.com/setup_12.x  | sudo bash -
+                  apt-get install -y nodejs
+                  apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv 9DA31620334BD75D9DCB49F368818C72E52529D4
+                  echo "deb [ arch=amd64 ] https://repo.mongodb.org/apt/ubuntu bionic/mongodb-org/4.0 multiverse" |   tee /etc/apt/sources.list.d/mongodb-org-4.0.list
+                  apt-get update
+                  apt-get install -y mongodb-org
+                  systemctl start mongod
+                  systemctl enable mongod
+                  npm install -g pm2
+                  pm2 startup systemd
+                  apt-get install -y nginx
+                  ufw allow OpenSSH
+                  ufw allow 'Nginx Full'
+                  ufw --force enable
+                  git clone https://github.com/ramikhreim1/MEANie-CMS-and-Blog-on-AWS.git /opt/meanie
+                  cd /opt/meanie/server
+                  cd /opt/meanie/server && npm install
+                  pm2 start server.js
+                  cat << EOF > /etc/nginx/sites-available/default
+                  server {
+                    listen 80 default_server;
+                    server_name _;
+
+                    location / {
+                      proxy_pass http://localhost:3000;
+                    }
+                  }
+                  EOF
+
+                  systemctl restart nginx
+
+    MEANInstanceSecurityGroup:
+      Type: 'AWS::EC2::SecurityGroup'
+      Properties:
+        GroupDescription: Enable MongoDB & NodeJS server ports
+        SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '27017'
+          ToPort: '27017'
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: '3000'
+          ToPort: '3000'
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: '22'
+          ToPort: '22'
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: '80'
+          ToPort: '80'
+          CidrIp: 0.0.0.0/0
+
+
+
